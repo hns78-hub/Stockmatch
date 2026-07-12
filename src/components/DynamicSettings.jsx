@@ -1,0 +1,947 @@
+import React, { useState } from 'react';
+import { Settings, X, Cpu, Key, Database, Check, Sparkles, Terminal, ToggleLeft, Eye } from 'lucide-react';
+
+export default function DynamicSettings({ 
+  onClose, 
+  onAddCustomStock, 
+  isLiveMode, 
+  setIsLiveMode,
+  apiKeys,
+  setApiKeys,
+  cardConfig,
+  setCardConfig,
+  onAutoSelect,
+  onResetAll,
+  stocks,
+  setStocks,
+  setPortfolio
+}) {
+  const [tickerInput, setTickerInput] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [successTicker, setSuccessTicker] = useState('');
+  const [activeTab, setActiveTab] = useState('admin'); // 'admin' | 'live' | 'ibkr'
+
+  const [ibkrUrl, setIbkrUrl] = useState('https://localhost:5000/v1/api');
+  const [ibkrStatus, setIbkrStatus] = useState('offline'); // 'offline' | 'connecting' | 'online'
+  const [ibkrLogs, setIbkrLogs] = useState([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const addLog = (text) => {
+    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${text}`]);
+  };
+
+  const addIbkrLog = (text) => {
+    setIbkrLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${text}`]);
+  };
+
+  const runLiveIBKRSync = async (isSimulated = false) => {
+    setIsSyncing(true);
+    setIbkrStatus('connecting');
+    setIbkrLogs([]);
+    
+    if (isSimulated) {
+      addIbkrLog("Initiating SIMULATED Live Market Ingestion from IBKR Sandbox...");
+      
+      setTimeout(() => {
+        addIbkrLog("Connecting to virtual client port at localhost:5000...");
+        addIbkrLog("Authenticated successfully with virtual paper account: DU9382103");
+      }, 500);
+
+      setTimeout(() => {
+        addIbkrLog("Resolving symbols for active Nasdaq 100 constituents...");
+        addIbkrLog("Tickers matched: AAPL, MSFT, NVDA, TSLA, AMZN, NFLX, META, GOOGL...");
+        addIbkrLog("Contract IDs resolved successfully via secdef mapping.");
+      }, 1300);
+
+      setTimeout(() => {
+        addIbkrLog("Fetching snapshot: Last Price, Net Change%, and Spread...");
+        
+        const realCurrentPrices = {
+          'AAPL': { price: 228.45, change: 1.4 },
+          'MSFT': { price: 453.80, change: 0.8 },
+          'NVDA': { price: 128.20, change: -1.1 },
+          'TSLA': { price: 252.10, change: 3.5 },
+          'AMZN': { price: 194.50, change: 0.2 },
+          'NFLX': { price: 681.40, change: 1.8 },
+          'META': { price: 499.70, change: -0.4 },
+          'GOOGL': { price: 181.25, change: 0.9 },
+          'AMD': { price: 178.60, change: 2.1 },
+          'COST': { price: 846.50, change: 0.5 },
+          'PEP': { price: 167.30, change: -0.2 }
+        };
+
+        setStocks(prevStocks => prevStocks.map(s => {
+          const liveData = realCurrentPrices[s.ticker];
+          if (liveData) {
+            return {
+              ...s,
+              lastPrice: liveData.price,
+              changeQuarter: liveData.change
+            };
+          } else {
+            const delta = (Math.random() * 2 - 1) * 10;
+            return {
+              ...s,
+              lastPrice: Math.round((s.lastPrice + delta) * 100) / 100
+            };
+          }
+        }));
+
+        setPortfolio(prevPortfolio => {
+          if (!prevPortfolio || !prevPortfolio.holdings) return prevPortfolio;
+          const updatedHoldings = prevPortfolio.holdings.map(h => {
+            const liveData = realCurrentPrices[h.ticker];
+            if (liveData) {
+              return {
+                ...h,
+                currentPrice: liveData.price
+              };
+            }
+            return h;
+          });
+          return {
+            ...prevPortfolio,
+            holdings: updatedHoldings
+          };
+        });
+
+        addIbkrLog("Live Prices Injected into active deck and holdings:");
+        addIbkrLog("  - AAPL: $228.45 (+1.4%)");
+        addIbkrLog("  - MSFT: $453.80 (+0.8%)");
+        addIbkrLog("  - NVDA: $128.20 (-1.1%)");
+        addIbkrLog("  - TSLA: $252.10 (+3.5%)");
+        
+        setIbkrStatus('online');
+        setIsSyncing(false);
+        addIbkrLog("Simulated Ingestion Pipeline Completed successfully! [ACTIVE]");
+      }, 2500);
+
+    } else {
+      addIbkrLog(`Connecting to real IBKR Gateway endpoint: ${ibkrUrl}`);
+      try {
+        const checkRes = await fetch(`${ibkrUrl}/one/user`, { method: 'GET' });
+        if (!checkRes.ok) {
+          throw new Error("Local Session Inactive. Please check that you are logged into the gateway at https://localhost:5000.");
+        }
+        const sessionData = await checkRes.json();
+        addIbkrLog(`Connected! Active User: ${sessionData.username || 'Trader'}`);
+        
+        const activeSymbols = stocks.slice(0, 8).map(s => s.ticker).join(',');
+        addIbkrLog(`Resolving contract details for symbols: ${activeSymbols}`);
+        const secRes = await fetch(`${ibkrUrl}/trsrv/secdef?symbols=${activeSymbols}`, { method: 'GET' });
+        if (!secRes.ok) throw new Error("Could not resolve ticker symbols from Gateway.");
+        
+        const secData = await secRes.json();
+        const conids = secData.map(item => item.conid).filter(Boolean);
+        
+        addIbkrLog(`Successfully resolved ${conids.length} contract IDs. Requesting live market snapshot...`);
+        
+        const snapRes = await fetch(`${ibkrUrl}/iserver/marketdata/snapshot?conids=${conids.join(',')}&fields=31,84`, { method: 'GET' });
+        if (!snapRes.ok) throw new Error("Market snapshot request rejected by IBKR gateway.");
+        
+        const snapData = await snapRes.json();
+        
+        setStocks(prev => prev.map(stock => {
+          const matchedDef = secData.find(d => d.symbol === stock.ticker);
+          if (!matchedDef) return stock;
+          const matchedSnap = snapData.find(sn => sn.conid === matchedDef.conid);
+          if (!matchedSnap) return stock;
+          
+          const priceVal = parseFloat(matchedSnap['31']) || stock.lastPrice;
+          const pctVal = parseFloat(matchedSnap['84']) || stock.changeQuarter;
+          
+          return {
+            ...stock,
+            lastPrice: Math.round(priceVal * 100) / 100,
+            changeQuarter: Math.round(pctVal * 10) / 10
+          };
+        }));
+
+        setPortfolio(prev => {
+          if (!prev || !prev.holdings) return prev;
+          const updated = prev.holdings.map(h => {
+            const matchedDef = secData.find(d => d.symbol === h.ticker);
+            if (!matchedDef) return h;
+            const matchedSnap = snapData.find(sn => sn.conid === matchedDef.conid);
+            if (!matchedSnap) return h;
+            return {
+              ...h,
+              currentPrice: parseFloat(matchedSnap['31']) || h.currentPrice
+            };
+          });
+          return { ...prev, holdings: updated };
+        });
+
+        setIbkrStatus('online');
+        addIbkrLog(`Successfully synchronized ${conids.length} contracts with IBKR Gateway!`);
+      } catch (err) {
+        setIbkrStatus('offline');
+        addIbkrLog(`Connection Failed: ${err.message}`);
+        addIbkrLog("Ensure the IBKR Gateway client is active on port 5000, and CORS controls are enabled.");
+      }
+      setIsSyncing(false);
+    }
+  };
+
+  const handleKeyChange = (keyName, val) => {
+    const updated = { ...apiKeys, [keyName]: val };
+    setApiKeys(updated);
+    localStorage.setItem('stockmatch_keys', JSON.stringify(updated));
+  };
+
+  const toggleConfig = (param) => {
+    setCardConfig(prev => ({
+      ...prev,
+      [param]: !prev[param]
+    }));
+  };
+
+  const handleSimulateGeneration = () => {
+    if (!tickerInput) return;
+    const ticker = tickerInput.toUpperCase().trim();
+    
+    setIsGenerating(true);
+    setLogs([]);
+    setSuccessTicker('');
+    
+    addLog(`Initiating financial data query for ticker: ${ticker}`);
+    
+    setTimeout(() => {
+      addLog(`Querying Financial Modeling Prep API...`);
+      addLog(`Success: Retrieved Q2 Income Statement & Balance Sheet.`);
+    }, 600);
+
+    setTimeout(() => {
+      addLog(`Raw Financial Data Payload size: 8.4 KB`);
+      addLog(`Raw EBITDA Margin: 38.4%, Diluted EPS: $2.10, Total Assets: $84B`);
+      addLog(`Contacting OpenAI API (gpt-4o-mini)...`);
+      addLog(`Applying system prompt: 'Translate 10-Q statements to jargon-free Gen Z dating profiles using JSON Structured Output...'`);
+    }, 1400);
+
+    setTimeout(() => {
+      addLog(`AI Translation completed successfully (tokens: 280 in, 185 out)`);
+      addLog(`Generated Vibe Check, color-coded Vitals, and Earnings Call Gossip.`);
+    }, 2400);
+
+    setTimeout(() => {
+      const newStock = {
+        id: ticker.toLowerCase(),
+        ticker: ticker,
+        name: ticker === 'NKE' ? 'Nike Inc.' : ticker === 'SBUX' ? 'Starbucks Corp.' : `${ticker} Corp`,
+        sector: ticker === 'NKE' ? 'Retail' : ticker === 'SBUX' ? 'Food/Beverage' : 'Tech',
+        logoBg: 'linear-gradient(135deg, #1e293b, #0f172a)',
+        earningsMonth: 3,
+        vibeCheck: `This company translates athletic movement and lifestyle choices into pure retail margin. They sell sneaker hype and workout drip.`,
+        vitals: {
+          revenueGrowth: "+4.2%",
+          revenueGrowthYes: true,
+          profitMargin: "12.5%",
+          profitMarginYes: true,
+          analystConsensus: "up"
+        },
+        gossip: "Digital sales are carrying the brand, but retail foot-traffic is sluggish. Cutting guidance slightly for physical stores.",
+        trivia: `This company was originally founded in 1964 as Blue Ribbon Sports and operated out of the trunk of the founder's car.`,
+        lastPrice: 120,
+        changeQuarter: 4.2,
+        changeYear: 18.5,
+        change5Years: 85.0
+      };
+
+      onAddCustomStock(newStock);
+      setSuccessTicker(ticker);
+      setIsGenerating(false);
+      addLog(`Ticker ${ticker} injected into active card deck stack! Ready to swipe.`);
+    }, 3200);
+  };
+
+  const paramLabels = [
+    { key: 'showPrice', label: 'Share Price ($)' },
+    { key: 'showChangeQ', label: 'Quarter Performance (%)' },
+    { key: 'showChangeY', label: 'Year Performance (%)' },
+    { key: 'showChange5Y', label: '5-Year Performance (%)' },
+    { key: 'showRevenue', label: 'Revenue Growth' },
+    { key: 'showMargin', label: 'Profit Margin' },
+    { key: 'showConsensus', label: 'Analyst Sentiment Vibe' },
+    { key: 'showGossip', label: 'Earnings Call Gossip' },
+    { key: 'showTrivia', label: 'Company Trivia' }
+  ];
+
+  return (
+    <div style={styles.overlay}>
+      <div style={styles.backdrop} onClick={onClose} />
+      <div style={styles.drawer} className="glass-panel">
+        <div style={styles.header}>
+          <div style={styles.headerTitle}>
+            <Settings size={20} color="var(--color-purple)" />
+            <h3>Settings Drawer</h3>
+          </div>
+          <button onClick={onClose} style={styles.closeBtn}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Tab Row */}
+        <div style={styles.tabRow}>
+          <button 
+            style={{ ...styles.tabBtn, borderBottom: activeTab === 'admin' ? '2px solid var(--color-purple)' : 'none', color: activeTab === 'admin' ? '#fff' : 'var(--text-secondary)' }}
+            onClick={() => setActiveTab('admin')}
+          >
+            Admin Panel
+          </button>
+          <button 
+            style={{ ...styles.tabBtn, borderBottom: activeTab === 'live' ? '2px solid var(--color-purple)' : 'none', color: activeTab === 'live' ? '#fff' : 'var(--text-secondary)' }}
+            onClick={() => setActiveTab('live')}
+          >
+            AI Ingestion
+          </button>
+          <button 
+            style={{ ...styles.tabBtn, borderBottom: activeTab === 'ibkr' ? '2px solid var(--color-purple)' : 'none', color: activeTab === 'ibkr' ? '#fff' : 'var(--text-secondary)' }}
+            onClick={() => setActiveTab('ibkr')}
+          >
+            IBKR Live Sync
+          </button>
+        </div>
+
+        <div style={styles.content}>
+          {activeTab === 'admin' && (
+            <div style={styles.tabContent}>
+              <div style={styles.cardSection}>
+                <div style={styles.sectionHeader}>
+                  <Eye size={16} color="var(--color-purple)" />
+                  <h4 style={styles.cardSectionTitle}>Stock Card Parameters</h4>
+                </div>
+                <p style={styles.helperText}>
+                  Toggle which financial variables and insights are displayed on the active stock deck profile cards.
+                </p>
+
+                <div style={styles.checkboxGrid}>
+                  {paramLabels.map((param) => (
+                    <div 
+                      key={param.key} 
+                      style={styles.checkboxRow}
+                      onClick={() => toggleConfig(param.key)}
+                    >
+                      <div style={{
+                        ...styles.checkbox,
+                        background: cardConfig[param.key] ? 'var(--color-purple)' : 'rgba(255,255,255,0.05)',
+                        borderColor: cardConfig[param.key] ? 'var(--color-purple)' : 'rgba(255,255,255,0.15)'
+                      }}>
+                        {cardConfig[param.key] && <Check size={12} color="#fff" />}
+                      </div>
+                      <span style={{ 
+                        ...styles.checkboxLabel, 
+                        color: cardConfig[param.key] ? '#fff' : 'var(--text-secondary)' 
+                       }}>
+                        {param.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={styles.cardSection}>
+                <div style={styles.sectionHeader}>
+                  <Cpu size={16} color="var(--color-purple)" />
+                  <h4 style={styles.cardSectionTitle}>Testing Shortcuts</h4>
+                </div>
+                <p style={styles.helperText}>
+                  Instantly match 20 stocks and skip to the dashboard to test results, filtering, parameters, and brokerage face-offs.
+                </p>
+                <button 
+                  onClick={() => {
+                    onAutoSelect();
+                    onClose();
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, var(--color-purple), var(--color-blue))',
+                    color: '#fff',
+                    fontSize: '0.82rem',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-display)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 12px rgba(139, 92, 246, 0.25)',
+                  }}
+                  className="btn-hover-grow glow-purple"
+                >
+                  AI Auto-Select 20 Matches
+                </button>
+              </div>
+
+              <div style={styles.cardSection}>
+                <div style={styles.sectionHeader}>
+                  <X size={16} color="var(--color-bearish)" />
+                  <h4 style={styles.cardSectionTitle}>Danger Zone</h4>
+                </div>
+                <p style={styles.helperText}>
+                  Clear all matches, rejections, and swipe history to start fresh from card #1.
+                </p>
+                <button 
+                  onClick={() => {
+                    onResetAll();
+                    onClose();
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--color-bearish)',
+                    background: 'rgba(244, 63, 94, 0.05)',
+                    color: 'var(--color-bearish)',
+                    fontSize: '0.82rem',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-display)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                  }}
+                  className="btn-hover-grow glow-red"
+                >
+                  Reset All Swipes & Matches
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'live' && (
+            <div style={styles.tabContent}>
+              {/* Mode Switcher */}
+              <div style={styles.cardSection}>
+                <div style={styles.sectionHeader}>
+                  <Database size={16} color="var(--color-purple)" />
+                  <h4 style={styles.cardSectionTitle}>Data Ingestion Mode</h4>
+                </div>
+                
+                <div style={styles.toggleRow}>
+                  <button 
+                    onClick={() => setIsLiveMode(false)}
+                    style={{ 
+                      ...styles.toggleBtn, 
+                      background: !isLiveMode ? 'var(--color-purple)' : 'rgba(255,255,255,0.05)',
+                      color: '#fff'
+                    }}
+                  >
+                    Local Mock Mode
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIsLiveMode(true);
+                      addLog("Switched to Live AI Generation Mode. Make sure keys are populated.");
+                    }}
+                    style={{ 
+                      ...styles.toggleBtn, 
+                      background: isLiveMode ? 'var(--color-purple)' : 'rgba(255,255,255,0.05)',
+                      color: '#fff'
+                    }}
+                  >
+                    Live API Mode
+                  </button>
+                </div>
+                
+                <p style={styles.helperText}>
+                  {!isLiveMode 
+                    ? "Uses pre-compiled, premium translated profiles for a smooth 100% working demo without external API dependencies."
+                    : "Fetches dynamic 10-Q reports and translates them in real-time using OpenAI and Financial Data endpoints."}
+                </p>
+              </div>
+
+              {/* API Key Credentials */}
+              <div style={styles.cardSection}>
+                <div style={styles.sectionHeader}>
+                  <Key size={16} color="var(--color-gold)" />
+                  <h4 style={styles.cardSectionTitle}>API Credentials (Optional)</h4>
+                </div>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.inputLabel}>OpenAI API Key (gpt-4o-mini)</label>
+                  <input 
+                    type="password" 
+                    placeholder="sk-..." 
+                    value={apiKeys.openai || ''}
+                    onChange={(e) => handleKeyChange('openai', e.target.value)}
+                    style={styles.input}
+                  />
+                </div>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.inputLabel}>Financial Modeling Prep Key</label>
+                  <input 
+                    type="password" 
+                    placeholder="FMP Endpoint Key" 
+                    value={apiKeys.fmp || ''}
+                    onChange={(e) => handleKeyChange('fmp', e.target.value)}
+                    style={styles.input}
+                  />
+                </div>
+              </div>
+
+              {/* AI Generator Simulator */}
+              <div style={styles.cardSection}>
+                <div style={styles.sectionHeader}>
+                  <Cpu size={16} color="var(--color-blue)" />
+                  <h4 style={styles.cardSectionTitle}>Dynamic Ticker Generator</h4>
+                </div>
+
+                <p style={styles.helperText}>
+                  Simulate the AI translation pipeline for *any* custom ticker to inject it into the card deck stack! Try <code style={styles.code}>NKE</code> or <code style={styles.code}>SBUX</code>.
+                </p>
+
+                <div style={styles.tickerInputRow}>
+                  <input 
+                    type="text" 
+                    placeholder="e.g. NKE" 
+                    value={tickerInput}
+                    onChange={(e) => setTickerInput(e.target.value)}
+                    maxLength={5}
+                    style={styles.tickerInput}
+                  />
+                  <button 
+                    onClick={handleSimulateGeneration}
+                    disabled={!tickerInput || isGenerating}
+                    style={{ 
+                      ...styles.generateBtn, 
+                      opacity: !tickerInput || isGenerating ? 0.6 : 1,
+                      cursor: !tickerInput || isGenerating ? 'not-allowed' : 'pointer'
+                    }}
+                    className="btn-hover-grow glow-purple"
+                  >
+                    {isGenerating ? 'Translating...' : 'Translate & Inject'}
+                  </button>
+                </div>
+
+                {/* Terminal Logs */}
+                {(logs.length > 0 || isGenerating) && (
+                  <div style={styles.terminal}>
+                    <div style={styles.terminalHeader}>
+                      <Terminal size={12} color="#10b981" />
+                      <span>TRANSLATION PIPELINE TERMINAL</span>
+                    </div>
+                    <div style={styles.terminalBody}>
+                      {logs.map((log, idx) => (
+                        <div key={idx} style={styles.terminalLine}>{log}</div>
+                      ))}
+                      {isGenerating && <div style={styles.terminalCursor}>■ Ingesting and translating...</div>}
+                    </div>
+                  </div>
+                )}
+
+                {successTicker && (
+                  <div style={styles.successBadge}>
+                    <Check size={14} style={{ marginRight: '6px' }} />
+                    <span>Successfully injected {successTicker}! Check your swiping workspace.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'ibkr' && (
+            <div style={styles.tabContent}>
+              <div style={styles.cardSection}>
+                <div style={styles.sectionHeader}>
+                  <Database size={16} color="var(--color-purple)" />
+                  <h4 style={styles.cardSectionTitle}>IBKR Gateway Configuration</h4>
+                </div>
+                <p style={styles.helperText}>
+                  StockMatch connects directly to your local Interactive Brokers Client Portal API Gateway running on your machine.
+                </p>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.inputLabel}>Gateway Address</label>
+                  <input 
+                    type="text" 
+                    value={ibkrUrl} 
+                    onChange={(e) => setIbkrUrl(e.target.value)}
+                    style={styles.input}
+                  />
+                </div>
+
+                <div style={styles.statusRow}>
+                  <span style={styles.statusLabel}>Gateway Status:</span>
+                  <span style={{ 
+                    ...styles.statusBadge, 
+                    background: ibkrStatus === 'online' ? 'rgba(16,185,129,0.15)' : ibkrStatus === 'connecting' ? 'rgba(245,158,11,0.15)' : 'rgba(244,63,94,0.15)',
+                    color: ibkrStatus === 'online' ? 'var(--color-bullish)' : ibkrStatus === 'connecting' ? 'var(--color-gold)' : 'var(--color-bearish)',
+                    borderColor: ibkrStatus === 'online' ? 'rgba(16,185,129,0.3)' : ibkrStatus === 'connecting' ? 'rgba(245,158,11,0.3)' : 'rgba(244,63,94,0.3)'
+                  }}>
+                    {ibkrStatus.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <div style={styles.cardSection}>
+                <div style={styles.sectionHeader}>
+                  <Sparkles size={16} color="var(--color-gold)" />
+                  <h4 style={styles.cardSectionTitle}>Sync Controls</h4>
+                </div>
+                <p style={styles.helperText}>
+                  Ingest real-time quotes, spread, and percentage changes from your IBKR terminal directly into the active stock matches.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                  <button 
+                    onClick={() => runLiveIBKRSync(false)}
+                    disabled={isSyncing}
+                    style={{ 
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--font-display)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                    className="btn-hover-grow"
+                  >
+                    Sync from Local IBKR Gateway
+                  </button>
+
+                  <button 
+                    onClick={() => runLiveIBKRSync(true)}
+                    disabled={isSyncing}
+                    style={{ 
+                      width: '100%',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'linear-gradient(135deg, var(--color-purple), var(--color-blue))',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--font-display)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.25)',
+                    }}
+                    className="btn-hover-grow glow-purple"
+                  >
+                    Force Simulate Live Ingestion
+                  </button>
+                </div>
+              </div>
+
+              {/* Terminal Logs */}
+              {(ibkrLogs.length > 0 || isSyncing) && (
+                <div style={styles.terminal}>
+                  <div style={styles.terminalHeader}>
+                    <Terminal size={12} color="#10b981" />
+                    <span>IBKR SYNC PIPELINE TERMINAL</span>
+                  </div>
+                  <div style={styles.terminalBody}>
+                    {ibkrLogs.map((log, idx) => (
+                      <div key={idx} style={styles.terminalLine}>{log}</div>
+                    ))}
+                    {isSyncing && <div style={styles.terminalCursor}>■ Handshaking with Gateway...</div>}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const styles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    zIndex: 2000,
+    display: 'flex',
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    background: 'rgba(5, 5, 8, 0.6)',
+    backdropFilter: 'blur(4px)',
+    WebkitBackdropFilter: 'blur(4px)',
+  },
+  drawer: {
+    position: 'relative',
+    width: '100%',
+    maxWidth: '420px',
+    height: '100%',
+    background: 'rgba(15, 23, 42, 0.98)',
+    borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: '24px 0 0 24px',
+    padding: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+    zIndex: 10,
+    boxShadow: '-10px 0 30px rgba(0,0,0,0.5)',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottom: '1px solid rgba(255,255,255,0.05)',
+    paddingBottom: '12px',
+  },
+  headerTitle: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    color: '#fff',
+    fontFamily: 'var(--font-display)',
+  },
+  closeBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-muted)',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabRow: {
+    display: 'flex',
+    borderBottom: '1px solid rgba(255,255,255,0.05)',
+  },
+  tabBtn: {
+    flex: 1,
+    padding: '10px 0',
+    background: 'none',
+    border: 'none',
+    fontSize: '0.85rem',
+    fontWeight: '600',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-display)',
+    textAlign: 'center',
+  },
+  content: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px',
+    overflowY: 'auto',
+    flex: 1,
+    paddingRight: '4px',
+  },
+  tabContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px',
+  },
+  cardSection: {
+    background: 'rgba(255, 255, 255, 0.02)',
+    border: '1px solid rgba(255, 255, 255, 0.04)',
+    borderRadius: '16px',
+    padding: '16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  sectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  cardSectionTitle: {
+    fontSize: '0.85rem',
+    color: '#fff',
+    fontWeight: '700',
+  },
+  helperText: {
+    fontSize: '0.76rem',
+    color: 'var(--text-secondary)',
+    lineHeight: '1.45',
+  },
+  checkboxGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    marginTop: '6px',
+  },
+  checkboxRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    cursor: 'pointer',
+    padding: '6px 0',
+    userSelect: 'none',
+  },
+  checkbox: {
+    width: '18px',
+    height: '18px',
+    borderRadius: '4px',
+    border: '1px solid',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'var(--transition-smooth)',
+  },
+  checkboxLabel: {
+    fontSize: '0.82rem',
+    fontWeight: '500',
+    transition: 'var(--transition-smooth)',
+  },
+  toggleRow: {
+    display: 'flex',
+    background: 'rgba(0,0,0,0.2)',
+    borderRadius: '10px',
+    padding: '4px',
+    gap: '4px',
+  },
+  toggleBtn: {
+    flex: 1,
+    padding: '8px',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '0.78rem',
+    fontWeight: '600',
+    transition: 'var(--transition-smooth)',
+  },
+  inputGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  inputLabel: {
+    fontSize: '0.75rem',
+    color: 'var(--text-secondary)',
+    fontWeight: '500',
+  },
+  input: {
+    background: 'rgba(0,0,0,0.2)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '8px',
+    color: '#fff',
+    padding: '8px 12px',
+    fontSize: '0.82rem',
+    outline: 'none',
+  },
+  code: {
+    background: 'rgba(255,255,255,0.06)',
+    padding: '2px 4px',
+    borderRadius: '4px',
+    color: 'var(--color-purple)',
+    fontFamily: 'monospace',
+  },
+  tickerInputRow: {
+    display: 'flex',
+    gap: '8px',
+  },
+  tickerInput: {
+    width: '80px',
+    background: 'rgba(0,0,0,0.2)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '8px',
+    color: '#fff',
+    padding: '8px 12px',
+    fontSize: '0.88rem',
+    outline: 'none',
+    textAlign: 'center',
+    fontWeight: 'bold',
+    fontFamily: 'var(--font-display)',
+  },
+  generateBtn: {
+    flex: 1,
+    background: 'linear-gradient(135deg, var(--color-purple), var(--color-blue))',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    fontWeight: '700',
+    fontSize: '0.82rem',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-display)',
+  },
+  terminal: {
+    background: '#090d16',
+    border: '1px solid #1e293b',
+    borderRadius: '10px',
+    overflow: 'hidden',
+    marginTop: '8px',
+  },
+  terminalHeader: {
+    background: '#101726',
+    padding: '6px 12px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    fontSize: '0.65rem',
+    color: '#94a3b8',
+    fontWeight: '700',
+    borderBottom: '1px solid #1e293b',
+  },
+  terminalBody: {
+    padding: '12px',
+    maxHeight: '120px',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    fontFamily: 'monospace',
+    fontSize: '0.7rem',
+  },
+  terminalLine: {
+    color: '#a7f3d0',
+    wordBreak: 'break-all',
+  },
+  terminalCursor: {
+    color: '#60a5fa',
+  },
+  successBadge: {
+    background: 'rgba(16, 185, 129, 0.08)',
+    border: '1px solid rgba(16, 185, 129, 0.2)',
+    borderRadius: '8px',
+    color: 'var(--color-bullish)',
+    padding: '8px 10px',
+    display: 'flex',
+    alignItems: 'center',
+    fontSize: '0.75rem',
+    marginTop: '10px',
+  },
+  statusRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    background: 'rgba(0,0,0,0.12)',
+    padding: '8px 12px',
+    borderRadius: '8px',
+    border: '1px solid rgba(255,255,255,0.03)',
+    marginTop: '8px'
+  },
+  statusLabel: {
+    fontSize: '0.78rem',
+    color: 'var(--text-secondary)',
+    fontWeight: '600'
+  },
+  statusBadge: {
+    fontSize: '0.68rem',
+    fontWeight: '800',
+    padding: '3px 8px',
+    borderRadius: '30px',
+    border: '1px solid',
+    letterSpacing: '0.05em'
+  }
+};

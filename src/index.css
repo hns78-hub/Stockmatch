@@ -1,0 +1,254 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Theme Colors */
+  --bg-dark: #0a0b0e;
+  --bg-card: rgba(22, 26, 37, 0.65);
+  --bg-card-border: rgba(255, 255, 255, 0.08);
+  --text-primary: #ffffff;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  /* Accent Colors */
+  --color-bullish: #10b981;
+  --color-bullish-glow: rgba(16, 185, 129, 0.15);
+  --color-bearish: #f43f5e;
+  --color-bearish-glow: rgba(244, 63, 94, 0.15);
+  --color-gold: #f59e0b;
+  --color-gold-glow: rgba(245, 158, 11, 0.2);
+  --color-purple: #8b5cf6;
+  --color-blue: #3b82f6;
+
+  /* Standard transitions & box shadows */
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-premium: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+  --shadow-glow-green: 0 0 30px rgba(16, 185, 129, 0.25);
+  --shadow-glow-red: 0 0 30px rgba(244, 63, 94, 0.25);
+  --shadow-glow-gold: 0 0 40px rgba(245, 158, 11, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Background animated glow spots */
+body::before, body::after {
+  content: '';
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  filter: blur(150px);
+  z-index: -1;
+  opacity: 0.35;
+  pointer-events: none;
+  transition: all 1s ease;
+}
+
+body::before {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, rgba(59, 130, 246, 0.1) 50%, transparent 100%);
+  top: 10%;
+  left: -150px;
+  animation: floatBackground1 18s infinite alternate ease-in-out;
+}
+
+body::after {
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, rgba(139, 92, 246, 0.1) 50%, transparent 100%);
+  bottom: 10%;
+  right: -150px;
+  animation: floatBackground2 22s infinite alternate ease-in-out;
+}
+
+@keyframes floatBackground1 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(120px, 90px) scale(1.15); }
+}
+
+@keyframes floatBackground2 {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-90px, -110px) scale(0.95); }
+}
+
+/* Global Typography */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Glassmorphism card default styles */
+.glass-panel {
+  background: linear-gradient(135deg, rgba(22, 26, 37, 0.7) 0%, rgba(15, 23, 42, 0.8) 100%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 24px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.65), inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-panel:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.1);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 3D Card Flip Mechanics */
+.card-perspective {
+  perspective: 1500px;
+  width: 100%;
+  height: 100%;
+}
+
+.card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.card-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.card-front, .card-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: var(--shadow-premium);
+}
+
+.card-back {
+  transform: rotateY(180deg);
+}
+
+/* Custom interactive input range */
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  background: rgba(255,255,255,0.1);
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-purple);
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+  transition: var(--transition-smooth);
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* Action animations */
+.btn-hover-grow {
+  transition: var(--transition-smooth);
+}
+.btn-hover-grow:hover {
+  transform: translateY(-2px) scale(1.03);
+}
+.btn-hover-grow:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+/* Pulses and glows */
+.glow-green {
+  box-shadow: var(--shadow-glow-green);
+}
+.glow-red {
+  box-shadow: var(--shadow-glow-red);
+}
+.glow-gold {
+  box-shadow: var(--shadow-glow-gold);
+}
+.glow-purple {
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.18);
+}
+.glow-purple:hover {
+  box-shadow: 0 0 45px rgba(139, 92, 246, 0.35);
+}
+
+.pulse-glow {
+  animation: pulseGlow 2s infinite alternate ease-in-out;
+}
+
+@keyframes pulseGlow {
+  0% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.2); }
+  100% { box-shadow: 0 0 25px rgba(245, 158, 11, 0.5); }
+}
+
+/* Shake Animation for rejected items */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px) rotate(-1deg); }
+  75% { transform: translateX(5px) rotate(1deg); }
+}
+.animate-shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+/* Custom CSS Tooltip */
+.tooltip {
+  position: relative;
+}
+.tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 120%;
+  left: 50%;
+  transform: translateX(-50%) scale(0.8);
+  background: rgba(15, 23, 42, 0.95);
+  color: #fff;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  border-radius: 8px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: var(--transition-smooth);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.tooltip:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
