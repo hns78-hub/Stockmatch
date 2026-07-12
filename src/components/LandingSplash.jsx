@@ -22,7 +22,18 @@ export default function LandingSplash({ onStart, onAutoSelect, totalCount }) {
           <h1 style={styles.title}>
             Stock<span style={styles.titleGradient}>Match</span>
           </h1>
-          <span style={styles.badge}>HACKATHON MVP</span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={styles.badge}>HACKATHON MVP</span>
+            <a 
+              href="./pitch_deck.html" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              style={styles.pitchDeckLink}
+              className="btn-hover-grow"
+            >
+              🏆 View Pitch Deck
+            </a>
+          </div>
         </div>
 
         <p style={styles.subtitle}>
@@ -204,6 +215,19 @@ const styles = {
     borderRadius: '8px',
     border: '1px solid rgba(139, 92, 246, 0.2)',
     letterSpacing: '0.05em',
+  },
+  pitchDeckLink: {
+    fontSize: '0.65rem',
+    fontWeight: '800',
+    color: 'var(--color-gold)',
+    background: 'rgba(245, 158, 11, 0.12)',
+    padding: '3px 8px',
+    borderRadius: '8px',
+    border: '1px solid rgba(245, 158, 11, 0.2)',
+    letterSpacing: '0.05em',
+    textDecoration: 'none',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-display)',
   },
   subtitle: {
     fontSize: '1.15rem',
