@@ -26,6 +26,7 @@ export default function DynamicSettings({
   const [ibkrStatus, setIbkrStatus] = useState('offline'); // 'offline' | 'connecting' | 'online'
   const [ibkrLogs, setIbkrLogs] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncDataType, setSyncDataType] = useState('live'); // 'live' | 'close'
 
   const addLog = (text) => {
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${text}`]);
@@ -41,7 +42,11 @@ export default function DynamicSettings({
     setIbkrLogs([]);
     
     if (isSimulated) {
-      addIbkrLog("Initiating SIMULATED Live Market Ingestion from IBKR Sandbox...");
+      if (syncDataType === 'close') {
+        addIbkrLog("Initiating SIMULATED Day End Close Ingestion from IBKR Sandbox...");
+      } else {
+        addIbkrLog("Initiating SIMULATED Live Market Ingestion from IBKR Sandbox...");
+      }
       
       setTimeout(() => {
         addIbkrLog("Connecting to virtual client port at localhost:5000...");
@@ -55,9 +60,25 @@ export default function DynamicSettings({
       }, 1300);
 
       setTimeout(() => {
-        addIbkrLog("Fetching snapshot: Last Price, Net Change%, and Spread...");
+        if (syncDataType === 'close') {
+          addIbkrLog("Fetching Day-End Daily Close Historical Bars (1d Period)...");
+        } else {
+          addIbkrLog("Fetching snapshot: Last Price, Net Change%, and Spread...");
+        }
         
-        const realCurrentPrices = {
+        const priceTable = syncDataType === 'close' ? {
+          'AAPL': { price: 224.31, change: -0.4 },
+          'MSFT': { price: 450.95, change: -0.2 },
+          'NVDA': { price: 125.12, change: -2.3 },
+          'TSLA': { price: 248.80, change: -1.2 },
+          'AMZN': { price: 191.10, change: -0.9 },
+          'NFLX': { price: 677.20, change: -0.3 },
+          'META': { price: 494.30, change: -1.1 },
+          'GOOGL': { price: 179.40, change: -0.5 },
+          'AMD': { price: 173.20, change: -1.8 },
+          'COST': { price: 840.10, change: -0.1 },
+          'PEP': { price: 166.40, change: -0.4 }
+        } : {
           'AAPL': { price: 228.45, change: 1.4 },
           'MSFT': { price: 453.80, change: 0.8 },
           'NVDA': { price: 128.20, change: -1.1 },
@@ -72,7 +93,7 @@ export default function DynamicSettings({
         };
 
         setStocks(prevStocks => prevStocks.map(s => {
-          const liveData = realCurrentPrices[s.ticker];
+          const liveData = priceTable[s.ticker];
           if (liveData) {
             return {
               ...s,
@@ -80,10 +101,11 @@ export default function DynamicSettings({
               changeQuarter: liveData.change
             };
           } else {
-            const delta = (Math.random() * 2 - 1) * 10;
+            const bias = syncDataType === 'close' ? -2 : 1;
+            const delta = (Math.random() * 2 - 1.2) * 8 + bias;
             return {
               ...s,
-              lastPrice: Math.round((s.lastPrice + delta) * 100) / 100
+              lastPrice: Math.max(5, Math.round((s.lastPrice + delta) * 100) / 100)
             };
           }
         }));
@@ -91,7 +113,7 @@ export default function DynamicSettings({
         setPortfolio(prevPortfolio => {
           if (!prevPortfolio || !prevPortfolio.holdings) return prevPortfolio;
           const updatedHoldings = prevPortfolio.holdings.map(h => {
-            const liveData = realCurrentPrices[h.ticker];
+            const liveData = priceTable[h.ticker];
             if (liveData) {
               return {
                 ...h,
@@ -106,15 +128,25 @@ export default function DynamicSettings({
           };
         });
 
-        addIbkrLog("Live Prices Injected into active deck and holdings:");
-        addIbkrLog("  - AAPL: $228.45 (+1.4%)");
-        addIbkrLog("  - MSFT: $453.80 (+0.8%)");
-        addIbkrLog("  - NVDA: $128.20 (-1.1%)");
-        addIbkrLog("  - TSLA: $252.10 (+3.5%)");
+        if (syncDataType === 'close') {
+          addIbkrLog("Daily Close Prices Injected into active deck and holdings:");
+          addIbkrLog("  - AAPL Close: $224.31 (-0.4%)");
+          addIbkrLog("  - MSFT Close: $450.95 (-0.2%)");
+          addIbkrLog("  - NVDA Close: $125.12 (-2.3%)");
+          addIbkrLog("  - TSLA Close: $248.80 (-1.2%)");
+        } else {
+          addIbkrLog("Live Prices Injected into active deck and holdings:");
+          addIbkrLog("  - AAPL: $228.45 (+1.4%)");
+          addIbkrLog("  - MSFT: $453.80 (+0.8%)");
+          addIbkrLog("  - NVDA: $128.20 (-1.1%)");
+          addIbkrLog("  - TSLA: $252.10 (+3.5%)");
+        }
         
         setIbkrStatus('online');
         setIsSyncing(false);
-        addIbkrLog("Simulated Ingestion Pipeline Completed successfully! [ACTIVE]");
+        addIbkrLog(syncDataType === 'close' 
+          ? "Simulated EOD Close Ingestion Pipeline Completed! [ACTIVE]" 
+          : "Simulated Live Ingestion Pipeline Completed successfully! [ACTIVE]");
       }, 2500);
 
     } else {
@@ -135,46 +167,103 @@ export default function DynamicSettings({
         const secData = await secRes.json();
         const conids = secData.map(item => item.conid).filter(Boolean);
         
-        addIbkrLog(`Successfully resolved ${conids.length} contract IDs. Requesting live market snapshot...`);
-        
-        const snapRes = await fetch(`${ibkrUrl}/iserver/marketdata/snapshot?conids=${conids.join(',')}&fields=31,84`, { method: 'GET' });
-        if (!snapRes.ok) throw new Error("Market snapshot request rejected by IBKR gateway.");
-        
-        const snapData = await snapRes.json();
-        
-        setStocks(prev => prev.map(stock => {
-          const matchedDef = secData.find(d => d.symbol === stock.ticker);
-          if (!matchedDef) return stock;
-          const matchedSnap = snapData.find(sn => sn.conid === matchedDef.conid);
-          if (!matchedSnap) return stock;
+        if (syncDataType === 'close') {
+          addIbkrLog(`Resolved ${conids.length} contract IDs. Requesting daily close price histories...`);
           
-          const priceVal = parseFloat(matchedSnap['31']) || stock.lastPrice;
-          const pctVal = parseFloat(matchedSnap['84']) || stock.changeQuarter;
+          const closePrices = {};
+          const closeChanges = {};
           
-          return {
-            ...stock,
-            lastPrice: Math.round(priceVal * 100) / 100,
-            changeQuarter: Math.round(pctVal * 10) / 10
-          };
-        }));
-
-        setPortfolio(prev => {
-          if (!prev || !prev.holdings) return prev;
-          const updated = prev.holdings.map(h => {
-            const matchedDef = secData.find(d => d.symbol === h.ticker);
-            if (!matchedDef) return h;
-            const matchedSnap = snapData.find(sn => sn.conid === matchedDef.conid);
-            if (!matchedSnap) return h;
-            return {
-              ...h,
-              currentPrice: parseFloat(matchedSnap['31']) || h.currentPrice
-            };
+          const historyPromises = conids.map(async (conid) => {
+            try {
+              const histRes = await fetch(`${ibkrUrl}/iserver/marketdata/history?conid=${conid}&period=1d&bar=1d`, { method: 'GET' });
+              if (histRes.ok) {
+                const histData = await histRes.json();
+                if (histData && histData.data && histData.data.length > 0) {
+                  const lastBar = histData.data[histData.data.length - 1];
+                  closePrices[conid] = lastBar.c || lastBar.close;
+                  closeChanges[conid] = lastBar.chg || 0;
+                  addIbkrLog(`  Conid ${conid}: daily close is $${lastBar.c}`);
+                }
+              }
+            } catch (e) {
+              addIbkrLog(`Error fetching history for conid ${conid}: ${e.message}`);
+            }
           });
-          return { ...prev, holdings: updated };
-        });
+          
+          await Promise.all(historyPromises);
+          
+          setStocks(prev => prev.map(stock => {
+            const matchedDef = secData.find(d => d.symbol === stock.ticker);
+            if (!matchedDef) return stock;
+            const price = closePrices[matchedDef.conid];
+            const change = closeChanges[matchedDef.conid];
+            if (price === undefined) return stock;
+            return {
+              ...stock,
+              lastPrice: Math.round(price * 100) / 100,
+              changeQuarter: Math.round(change * 10) / 10
+            };
+          }));
 
-        setIbkrStatus('online');
-        addIbkrLog(`Successfully synchronized ${conids.length} contracts with IBKR Gateway!`);
+          setPortfolio(prev => {
+            if (!prev || !prev.holdings) return prev;
+            const updated = prev.holdings.map(h => {
+              const matchedDef = secData.find(d => d.symbol === h.ticker);
+              if (!matchedDef) return h;
+              const price = closePrices[matchedDef.conid];
+              if (price === undefined) return h;
+              return {
+                ...h,
+                currentPrice: price
+              };
+            });
+            return { ...prev, holdings: updated };
+          });
+          
+          setIbkrStatus('online');
+          addIbkrLog(`Successfully synchronized EOD close data for ${conids.length} contracts with IBKR Gateway!`);
+        } else {
+          addIbkrLog(`Successfully resolved ${conids.length} contract IDs. Requesting live market snapshot...`);
+          
+          const snapRes = await fetch(`${ibkrUrl}/iserver/marketdata/snapshot?conids=${conids.join(',')}&fields=31,84`, { method: 'GET' });
+          if (!snapRes.ok) throw new Error("Market snapshot request rejected by IBKR gateway.");
+          
+          const snapData = await snapRes.json();
+          
+          setStocks(prev => prev.map(stock => {
+            const matchedDef = secData.find(d => d.symbol === stock.ticker);
+            if (!matchedDef) return stock;
+            const matchedSnap = snapData.find(sn => sn.conid === matchedDef.conid);
+            if (!matchedSnap) return stock;
+            
+            const priceVal = parseFloat(matchedSnap['31']) || stock.lastPrice;
+            const pctVal = parseFloat(matchedSnap['84']) || stock.changeQuarter;
+            
+            return {
+              ...stock,
+              lastPrice: Math.round(priceVal * 100) / 100,
+              changeQuarter: Math.round(pctVal * 10) / 10
+            };
+          }));
+
+          setPortfolio(prev => {
+            if (!prev || !prev.holdings) return prev;
+            const updated = prev.holdings.map(h => {
+              const matchedDef = secData.find(d => d.symbol === h.ticker);
+              if (!matchedDef) return h;
+              const matchedSnap = snapData.find(sn => sn.conid === matchedDef.conid);
+              if (!matchedSnap) return h;
+              return {
+                ...h,
+                currentPrice: parseFloat(matchedSnap['31']) || h.currentPrice
+              };
+            });
+            return { ...prev, holdings: updated };
+          });
+
+          setIbkrStatus('online');
+          addIbkrLog(`Successfully synchronized snapshot quotes for ${conids.length} contracts with IBKR Gateway!`);
+        }
       } catch (err) {
         setIbkrStatus('offline');
         addIbkrLog(`Connection Failed: ${err.message}`);
@@ -585,8 +674,56 @@ export default function DynamicSettings({
                   <h4 style={styles.cardSectionTitle}>Sync Controls</h4>
                 </div>
                 <p style={styles.helperText}>
-                  Ingest real-time quotes, spread, and percentage changes from your IBKR terminal directly into the active stock matches.
+                  Ingest real-time quotes or daily close prices from your IBKR terminal directly into the active stock matches.
                 </p>
+
+                <div style={{ ...styles.inputGroup, marginBottom: '12px' }}>
+                  <label style={{ ...styles.inputLabel, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Sync Price Type</label>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                    <button
+                      onClick={() => setSyncDataType('live')}
+                      style={{
+                        flex: 1,
+                        background: syncDataType === 'live' ? 'var(--color-purple)' : 'rgba(255,255,255,0.03)',
+                        borderColor: syncDataType === 'live' ? 'var(--color-purple)' : 'rgba(255,255,255,0.06)',
+                        color: '#fff',
+                        fontSize: '0.72rem',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: '1px solid',
+                        cursor: 'pointer',
+                        fontWeight: '700',
+                        fontFamily: 'var(--font-display)',
+                        outline: 'none',
+                        transition: 'var(--transition-smooth)'
+                      }}
+                      className="btn-hover-grow"
+                    >
+                      Real-time Snapshot
+                    </button>
+                    <button
+                      onClick={() => setSyncDataType('close')}
+                      style={{
+                        flex: 1,
+                        background: syncDataType === 'close' ? 'var(--color-purple)' : 'rgba(255,255,255,0.03)',
+                        borderColor: syncDataType === 'close' ? 'var(--color-purple)' : 'rgba(255,255,255,0.06)',
+                        color: '#fff',
+                        fontSize: '0.72rem',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: '1px solid',
+                        cursor: 'pointer',
+                        fontWeight: '700',
+                        fontFamily: 'var(--font-display)',
+                        outline: 'none',
+                        transition: 'var(--transition-smooth)'
+                      }}
+                      className="btn-hover-grow"
+                    >
+                      Day End (Daily Close)
+                    </button>
+                  </div>
+                </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
                   <button 
