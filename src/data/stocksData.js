@@ -234,6 +234,10 @@ export const stocksData = baseConstituents.map((item, idx) => {
     changeQuarter: changeQ,
     changeYear: changeY,
     change5Years: change5Y,
+    price1MonthAgo: Math.round((basePrice / (1 + changeM / 100)) * 100) / 100,
+    price1QuarterAgo: Math.round((basePrice / (1 + changeQ / 100)) * 100) / 100,
+    price1YearAgo: Math.round((basePrice / (1 + changeY / 100)) * 100) / 100,
+    price5YearsAgo: Math.round((basePrice / (1 + change5Y / 100)) * 100) / 100,
     // Flashcard metrics
     peRatio,
     eps,

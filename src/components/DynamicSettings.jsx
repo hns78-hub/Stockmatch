@@ -469,8 +469,13 @@ export default function DynamicSettings({
                 const P_now = parseFloat(meta.regularMarketPrice || validCloses[validCloses.length - 1]);
                 const P_1m = parseFloat(validCloses[validCloses.length - 2]);
                 const change1m = ((P_now - P_1m) / P_1m) * 100;
+                
                 const P_3m = parseFloat(validCloses[validCloses.length - 4] || validCloses[0]);
                 const change3m = ((P_now - P_3m) / P_3m) * 100;
+                
+                const P_1y = parseFloat(validCloses[validCloses.length - 13] || validCloses[0]);
+                const change1y = ((P_now - P_1y) / P_1y) * 100;
+                
                 const P_5y = parseFloat(validCloses[0]);
                 const change5y = ((P_now - P_5y) / P_5y) * 100;
                 
@@ -479,7 +484,12 @@ export default function DynamicSettings({
                   price: P_now,
                   changeMonth: change1m,
                   changeQuarter: change3m,
-                  change5Years: change5y
+                  changeYear: change1y,
+                  change5Years: change5y,
+                  price1MonthAgo: P_1m,
+                  price1QuarterAgo: P_3m,
+                  price1YearAgo: P_1y,
+                  price5YearsAgo: P_5y
                 };
               }
             }
@@ -492,13 +502,20 @@ export default function DynamicSettings({
           const seed = ticker.charCodeAt(0) + (ticker.charCodeAt(1) || 0);
           const drift1m = ((seed % 5) - 2.5) * 0.4;
           const drift3m = ((seed % 9) - 4.5) * 0.8;
+          const drift1y = ((seed % 13) - 6.5) * 1.5;
           const drift5y = ((seed % 17) - 8.5) * 15;
+          const pNow = Math.round(basePrice * (1 + drift1m / 100) * 100) / 100;
           return {
             ticker,
-            price: Math.round(basePrice * (1 + drift1m / 100) * 100) / 100,
+            price: pNow,
             changeMonth: drift1m,
             changeQuarter: drift3m,
-            change5Years: drift5y
+            changeYear: drift1y,
+            change5Years: drift5y,
+            price1MonthAgo: Math.round((pNow / (1 + drift1m/100)) * 100) / 100,
+            price1QuarterAgo: Math.round((pNow / (1 + drift3m/100)) * 100) / 100,
+            price1YearAgo: Math.round((pNow / (1 + drift1y/100)) * 100) / 100,
+            price5YearsAgo: Math.round((pNow / (1 + drift5y/100)) * 100) / 100
           };
         });
         
@@ -523,7 +540,12 @@ export default function DynamicSettings({
           lastPrice: Math.round(live.price * 100) / 100,
           changeMonth: Math.round(live.changeMonth * 10) / 10,
           changeQuarter: Math.round(live.changeQuarter * 10) / 10,
-          change5Years: Math.round(live.change5Years * 10) / 10
+          changeYear: Math.round(live.changeYear * 10) / 10,
+          change5Years: Math.round(live.change5Years * 10) / 10,
+          price1MonthAgo: Math.round(live.price1MonthAgo * 100) / 100,
+          price1QuarterAgo: Math.round(live.price1QuarterAgo * 100) / 100,
+          price1YearAgo: Math.round(live.price1YearAgo * 100) / 100,
+          price5YearsAgo: Math.round(live.price5YearsAgo * 100) / 100
         };
       }));
 
@@ -536,7 +558,12 @@ export default function DynamicSettings({
           lastPrice: Math.round(live.price * 100) / 100,
           changeMonth: Math.round(live.changeMonth * 10) / 10,
           changeQuarter: Math.round(live.changeQuarter * 10) / 10,
-          change5Years: Math.round(live.change5Years * 10) / 10
+          changeYear: Math.round(live.changeYear * 10) / 10,
+          change5Years: Math.round(live.change5Years * 10) / 10,
+          price1MonthAgo: Math.round(live.price1MonthAgo * 100) / 100,
+          price1QuarterAgo: Math.round(live.price1QuarterAgo * 100) / 100,
+          price1YearAgo: Math.round(live.price1YearAgo * 100) / 100,
+          price5YearsAgo: Math.round(live.price5YearsAgo * 100) / 100
         };
       }));
 
@@ -654,7 +681,15 @@ export default function DynamicSettings({
   return (
     <div style={styles.overlay}>
       <div style={styles.backdrop} onClick={onClose} />
-      <div style={styles.drawer} className="glass-panel">
+      <div 
+        style={{ 
+          ...styles.drawer, 
+          width: activeTab === 'audit' ? '92vw' : '100%', 
+          maxWidth: activeTab === 'audit' ? '1180px' : '420px',
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' 
+        }} 
+        className="glass-panel"
+      >
         <div style={styles.header}>
           <div style={styles.headerTitle}>
             <Settings size={20} color="var(--color-purple)" />
@@ -681,9 +716,21 @@ export default function DynamicSettings({
           </button>
           <button 
             style={{ ...styles.tabBtn, borderBottom: activeTab === 'ibkr' ? '2px solid var(--color-purple)' : 'none', color: activeTab === 'ibkr' ? '#fff' : 'var(--text-secondary)' }}
-            onClick={() => setActiveTab('ibkr')}
+            onClick={() => {
+              setActiveTab('ibkr');
+              setTickerInput('');
+            }}
           >
             IBKR Live Sync
+          </button>
+          <button 
+            style={{ ...styles.tabBtn, borderBottom: activeTab === 'audit' ? '2px solid var(--color-purple)' : 'none', color: activeTab === 'audit' ? '#fff' : 'var(--text-secondary)' }}
+            onClick={() => {
+              setActiveTab('audit');
+              setTickerInput('');
+            }}
+          >
+            Audit Board
           </button>
         </div>
 
@@ -1136,6 +1183,89 @@ export default function DynamicSettings({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'audit' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', height: '100%', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                <div>
+                  <h4 style={{ color: '#fff', margin: 0, fontSize: '1rem' }}>Nasdaq 100 Audit Matrix</h4>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', margin: '2px 0 0 0' }}>
+                    Audit baseline & live EOD price metrics across all Nasdaq constituents.
+                  </p>
+                </div>
+                <input 
+                  type="text" 
+                  placeholder="Filter ticker, name, or sector..." 
+                  value={tickerInput}
+                  onChange={(e) => setTickerInput(e.target.value)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    background: 'rgba(0,0,0,0.2)',
+                    color: '#fff',
+                    fontSize: '0.78rem',
+                    width: '240px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Scrollable Table Wrapper */}
+              <div style={{ flex: 1, overflow: 'auto', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', background: 'rgba(0,0,0,0.15)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '8px 12px' }}>Ticker</th>
+                      <th style={{ padding: '8px 12px' }}>Company</th>
+                      <th style={{ padding: '8px 12px' }}>Close ($)</th>
+                      <th style={{ padding: '8px 12px' }}>1M Ago</th>
+                      <th style={{ padding: '8px 12px' }}>3M Ago</th>
+                      <th style={{ padding: '8px 12px' }}>1Y Ago</th>
+                      <th style={{ padding: '8px 12px' }}>5Y Ago</th>
+                      <th style={{ padding: '8px 12px' }}>P/E</th>
+                      <th style={{ padding: '8px 12px' }}>EPS</th>
+                      <th style={{ padding: '8px 12px' }}>Market Cap</th>
+                      <th style={{ padding: '8px 12px' }}>Div Yield</th>
+                      <th style={{ padding: '8px 12px' }}>ROE %</th>
+                      <th style={{ padding: '8px 12px' }}>D/E</th>
+                      <th style={{ padding: '8px 12px' }}>Rev Growth</th>
+                      <th style={{ padding: '8px 12px' }}>Margin</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stocks
+                      .filter(s => {
+                        const term = tickerInput.toUpperCase().trim();
+                        if (!term) return true;
+                        return s.ticker.includes(term) || s.sector.toUpperCase().includes(term) || s.name.toUpperCase().includes(term);
+                      })
+                      .map((stock) => {
+                        return (
+                          <tr key={stock.ticker} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', color: '#fff' }}>
+                            <td style={{ padding: '8px 12px', fontWeight: '800', color: 'var(--color-purple)' }}>{stock.ticker}</td>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }} title={stock.name}>{stock.name}</td>
+                            <td style={{ padding: '8px 12px', fontWeight: '700' }}>${stock.lastPrice?.toFixed(2)}</td>
+                            <td style={{ padding: '8px 12px' }}>${stock.price1MonthAgo?.toFixed(2) || '—'}</td>
+                            <td style={{ padding: '8px 12px' }}>${stock.price1QuarterAgo?.toFixed(2) || '—'}</td>
+                            <td style={{ padding: '8px 12px' }}>${stock.price1YearAgo?.toFixed(2) || '—'}</td>
+                            <td style={{ padding: '8px 12px' }}>${stock.price5YearsAgo?.toFixed(2) || '—'}</td>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{stock.peRatio}</td>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>${stock.eps?.toFixed(2)}</td>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{stock.marketCap}</td>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{stock.divYield}%</td>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{stock.roe}%</td>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{stock.debtToEquity}</td>
+                            <td style={{ padding: '8px 12px', color: stock.vitals.revenueGrowthYes ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{stock.vitals.revenueGrowth}</td>
+                            <td style={{ padding: '8px 12px', color: stock.vitals.profitMarginYes ? 'var(--color-bullish)' : 'var(--color-bearish)' }}>{stock.vitals.profitMargin}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
