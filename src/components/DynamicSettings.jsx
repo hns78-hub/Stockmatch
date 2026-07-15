@@ -273,6 +273,82 @@ export default function DynamicSettings({
     }
   };
 
+  const runYahooFinanceSync = async () => {
+    setIsSyncing(true);
+    setIbkrStatus('connecting');
+    setIbkrLogs([]);
+    addIbkrLog("Initiating Yahoo Finance Live Sync (via CORS Proxy)...");
+    
+    // Determine target tickers: active swiping deck cards + portfolio holdings
+    const holdingsTickers = portfolio?.holdings?.map(h => h.ticker) || [];
+    const activeDeckTickers = stocks.slice(0, 10).map(s => s.ticker);
+    const targetTickers = Array.from(new Set([...activeDeckTickers, ...holdingsTickers]));
+    
+    addIbkrLog(`Connecting to Yahoo Finance API for: ${targetTickers.join(', ')}`);
+    
+    try {
+      const syncPromises = targetTickers.map(async (ticker) => {
+        try {
+          const res = await fetch(`https://corsproxy.io/?https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`);
+          if (res.ok) {
+            const data = await res.json();
+            const meta = data?.chart?.result?.[0]?.meta;
+            if (meta) {
+              const price = meta.regularMarketPrice;
+              const prevClose = meta.chartPreviousClose || price;
+              const change = ((price - prevClose) / prevClose) * 100;
+              return { ticker, price, change };
+            }
+          }
+        } catch (err) {
+          addIbkrLog(`  [Error] ${ticker}: failed to resolve from Yahoo Finance.`);
+        }
+        return null;
+      });
+      
+      const results = (await Promise.all(syncPromises)).filter(Boolean);
+      
+      if (results.length === 0) {
+        throw new Error("Could not retrieve stock prices from Yahoo Finance. Proxy might be rate-limited.");
+      }
+      
+      // Update stocks state
+      setStocks(prev => prev.map(stock => {
+        const live = results.find(r => r.ticker === stock.ticker);
+        if (!live) return stock;
+        return {
+          ...stock,
+          lastPrice: Math.round(live.price * 100) / 100,
+          changeQuarter: Math.round(live.change * 10) / 10
+        };
+      }));
+
+      // Update portfolio holdings state
+      setPortfolio(prev => {
+        if (!prev || !prev.holdings) return prev;
+        const updated = prev.holdings.map(h => {
+          const live = results.find(r => r.ticker === h.ticker);
+          if (!live) return h;
+          return {
+            ...h,
+            currentPrice: Math.round(live.price * 100) / 100
+          };
+        });
+        return { ...prev, holdings: updated };
+      });
+      
+      setIbkrStatus('online');
+      addIbkrLog("Yahoo Finance Ingestion Complete! Sync summary:");
+      results.forEach(r => {
+        addIbkrLog(`  - ${r.ticker}: $${r.price.toFixed(2)} (${r.change >= 0 ? '+' : ''}${r.change.toFixed(2)}%)`);
+      });
+    } catch (e) {
+      setIbkrStatus('offline');
+      addIbkrLog(`Sync Failed: ${e.message}`);
+    }
+    setIsSyncing(false);
+  };
+
   const handleKeyChange = (keyName, val) => {
     const updated = { ...apiKeys, [keyName]: val };
     setApiKeys(updated);
@@ -727,15 +803,39 @@ export default function DynamicSettings({
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
                   <button 
+                    onClick={runYahooFinanceSync}
+                    disabled={isSyncing}
+                    style={{ 
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'linear-gradient(135deg, var(--color-purple), var(--color-blue))',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--font-display)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.25)',
+                    }}
+                    className="btn-hover-grow glow-purple"
+                  >
+                    Sync from Yahoo Finance API
+                  </button>
+
+                  <button 
                     onClick={() => runLiveIBKRSync(false)}
                     disabled={isSyncing}
                     style={{ 
                       width: '100%',
                       padding: '10px 14px',
                       borderRadius: '8px',
-                      border: 'none',
-                      background: 'rgba(255,255,255,0.05)',
                       border: '1px solid rgba(255,255,255,0.1)',
+                      background: 'rgba(255,255,255,0.03)',
                       color: '#fff',
                       fontSize: '0.8rem',
                       fontWeight: '700',
@@ -758,9 +858,9 @@ export default function DynamicSettings({
                       width: '100%',
                       padding: '10px 14px',
                       borderRadius: '8px',
-                      border: 'none',
-                      background: 'linear-gradient(135deg, var(--color-purple), var(--color-blue))',
-                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.05)',
+                      background: 'rgba(255,255,255,0.01)',
+                      color: 'var(--text-secondary)',
                       fontSize: '0.8rem',
                       fontWeight: '700',
                       cursor: 'pointer',
@@ -768,12 +868,11 @@ export default function DynamicSettings({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '6px',
-                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.25)',
+                      gap: '6px'
                     }}
-                    className="btn-hover-grow glow-purple"
+                    className="btn-hover-grow"
                   >
-                    Force Simulate Live Ingestion
+                    Force Simulate Ingestion
                   </button>
                 </div>
               </div>
