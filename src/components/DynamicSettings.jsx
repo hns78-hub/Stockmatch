@@ -277,19 +277,82 @@ export default function DynamicSettings({
     setIsSyncing(true);
     setIbkrStatus('connecting');
     setIbkrLogs([]);
-    addIbkrLog("Initiating Yahoo Finance Live Sync (via CORS Proxy)...");
     
     // Determine target tickers: active swiping deck cards + portfolio holdings
     const holdingsTickers = portfolio?.holdings?.map(h => h.ticker) || [];
     const activeDeckTickers = stocks.slice(0, 10).map(s => s.ticker);
     const targetTickers = Array.from(new Set([...activeDeckTickers, ...holdingsTickers]));
     
-    addIbkrLog(`Connecting to Yahoo Finance API for: ${targetTickers.join(', ')}`);
-    
+    const hasFmpKey = apiKeys.fmp && apiKeys.fmp.trim().length > 3;
+
+    if (hasFmpKey) {
+      addIbkrLog(`Initiating FMP (Financial Modeling Prep) Live Sync...`);
+      addIbkrLog(`Fetching real-time quotes for: ${targetTickers.join(', ')}`);
+      
+      try {
+        const res = await fetch(`https://financialmodelingprep.com/api/v3/quote/${targetTickers.join(',')}?apikey=${apiKeys.fmp}`);
+        if (!res.ok) throw new Error("FMP API request rejected. Please verify your API Key in settings.");
+        
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error("Invalid response or limit reached from FMP. Falling back to Yahoo Finance.");
+        }
+        
+        const results = data.map(item => ({
+          ticker: item.symbol,
+          price: item.price,
+          change: item.changesPercentage
+        }));
+
+        // Update stocks state
+        setStocks(prev => prev.map(stock => {
+          const live = results.find(r => r.ticker === stock.ticker);
+          if (!live) return stock;
+          return {
+            ...stock,
+            lastPrice: Math.round(live.price * 100) / 100,
+            changeQuarter: Math.round(live.change * 10) / 10
+          };
+        }));
+
+        // Update portfolio holdings state
+        setPortfolio(prev => {
+          if (!prev || !prev.holdings) return prev;
+          const updated = prev.holdings.map(h => {
+            const live = results.find(r => r.ticker === h.ticker);
+            if (!live) return h;
+            return {
+              ...h,
+              currentPrice: Math.round(live.price * 100) / 100
+            };
+          });
+          return { ...prev, holdings: updated };
+        });
+
+        setIbkrStatus('online');
+        addIbkrLog("FMP Live Quote Sync Ingestion Complete! Sync summary:");
+        results.forEach(r => {
+          addIbkrLog(`  - ${r.ticker}: $${r.price.toFixed(2)} (${r.change >= 0 ? '+' : ''}${r.change.toFixed(2)}%)`);
+        });
+      } catch (err) {
+        addIbkrLog(`FMP Sync Failed: ${err.message}`);
+        addIbkrLog("Falling back to cache-busted Yahoo Finance sync...");
+        await fetchFromYahooFinance(targetTickers);
+      }
+    } else {
+      addIbkrLog("Initiating Yahoo Finance Cache-Busted Live Sync (via CORS Proxy)...");
+      await fetchFromYahooFinance(targetTickers);
+    }
+    setIsSyncing(false);
+  };
+
+  const fetchFromYahooFinance = async (targetTickers) => {
+    addIbkrLog(`Connecting to Yahoo Finance for: ${targetTickers.join(', ')}`);
     try {
       const syncPromises = targetTickers.map(async (ticker) => {
         try {
-          const res = await fetch(`https://corsproxy.io/?https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`);
+          // Append a unique cache-busting timestamp param to make sure the CORS proxy fetches fresh data
+          const res = await fetch(`https://corsproxy.io/?https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?nocache=${Date.now()}`);
           if (res.ok) {
             const data = await res.json();
             const meta = data?.chart?.result?.[0]?.meta;
@@ -346,7 +409,6 @@ export default function DynamicSettings({
       setIbkrStatus('offline');
       addIbkrLog(`Sync Failed: ${e.message}`);
     }
-    setIsSyncing(false);
   };
 
   const handleKeyChange = (keyName, val) => {
