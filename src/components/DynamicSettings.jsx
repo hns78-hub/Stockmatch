@@ -14,7 +14,8 @@ export default function DynamicSettings({
   onResetAll,
   stocks,
   setStocks,
-  setPortfolio
+  setPortfolio,
+  portfolio
 }) {
   const [tickerInput, setTickerInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);

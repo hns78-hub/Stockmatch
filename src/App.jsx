@@ -512,6 +512,7 @@ export default function App() {
             stocks={stocks}
             setStocks={setStocks}
             setPortfolio={setPortfolio}
+            portfolio={portfolio}
           />
         )}
 
