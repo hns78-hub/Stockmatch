@@ -302,29 +302,29 @@ export default function DynamicSettings({
         
         const results = data.map(item => ({
           ticker: item.symbol,
-          price: item.price,
-          change: item.changesPercentage
+          price: parseFloat(item.price),
+          change: parseFloat(item.changesPercentage)
         }));
 
         // Update stocks state
         setStocks(prev => prev.map(stock => {
           const live = results.find(r => r.ticker === stock.ticker);
-          if (!live) return stock;
+          if (!live || isNaN(live.price)) return stock;
           return {
             ...stock,
             lastPrice: Math.round(live.price * 100) / 100,
-            changeQuarter: Math.round(live.change * 10) / 10
+            changeQuarter: isNaN(live.change) ? stock.changeQuarter : Math.round(live.change * 10) / 10
           };
         }));
 
         // Update matches state
         setMatches(prev => prev.map(stock => {
           const live = results.find(r => r.ticker === stock.ticker);
-          if (!live) return stock;
+          if (!live || isNaN(live.price)) return stock;
           return {
             ...stock,
             lastPrice: Math.round(live.price * 100) / 100,
-            changeQuarter: Math.round(live.change * 10) / 10
+            changeQuarter: isNaN(live.change) ? stock.changeQuarter : Math.round(live.change * 10) / 10
           };
         }));
 
@@ -333,7 +333,7 @@ export default function DynamicSettings({
           if (!prev || !prev.holdings) return prev;
           const updated = prev.holdings.map(h => {
             const live = results.find(r => r.ticker === h.ticker);
-            if (!live) return h;
+            if (!live || isNaN(live.price)) return h;
             return {
               ...h,
               currentPrice: Math.round(live.price * 100) / 100
@@ -345,7 +345,9 @@ export default function DynamicSettings({
         setIbkrStatus('online');
         addIbkrLog("FMP Live Quote Sync Ingestion Complete! Sync summary:");
         results.forEach(r => {
-          addIbkrLog(`  - ${r.ticker}: $${r.price.toFixed(2)} (${r.change >= 0 ? '+' : ''}${r.change.toFixed(2)}%)`);
+          const dispPrice = isNaN(r.price) ? 0 : r.price;
+          const dispChange = isNaN(r.change) ? 0 : r.change;
+          addIbkrLog(`  - ${r.ticker}: $${dispPrice.toFixed(2)} (${dispChange >= 0 ? '+' : ''}${dispChange.toFixed(2)}%)`);
         });
       } catch (err) {
         addIbkrLog(`FMP Sync Failed: ${err.message}`);
@@ -364,15 +366,14 @@ export default function DynamicSettings({
     try {
       const syncPromises = targetTickers.map(async (ticker) => {
         try {
-          // Append a unique cache-busting timestamp param to make sure the CORS proxy fetches fresh data
           const res = await fetch(`https://corsproxy.io/?https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?nocache=${Date.now()}`);
           if (res.ok) {
             const data = await res.json();
             const meta = data?.chart?.result?.[0]?.meta;
             if (meta) {
-              const price = meta.regularMarketPrice;
-              const prevClose = meta.chartPreviousClose || price;
-              const change = ((price - prevClose) / prevClose) * 100;
+              const price = parseFloat(meta.regularMarketPrice || meta.chartPreviousClose || 0);
+              const prevClose = parseFloat(meta.chartPreviousClose || price || 0);
+              const change = prevClose !== 0 ? ((price - prevClose) / prevClose) * 100 : 0;
               return { ticker, price, change };
             }
           }
@@ -391,22 +392,22 @@ export default function DynamicSettings({
       // Update stocks state
       setStocks(prev => prev.map(stock => {
         const live = results.find(r => r.ticker === stock.ticker);
-        if (!live) return stock;
+        if (!live || isNaN(live.price) || live.price === 0) return stock;
         return {
           ...stock,
           lastPrice: Math.round(live.price * 100) / 100,
-          changeQuarter: Math.round(live.change * 10) / 10
+          changeQuarter: isNaN(live.change) ? stock.changeQuarter : Math.round(live.change * 10) / 10
         };
       }));
 
       // Update matches state
       setMatches(prev => prev.map(stock => {
         const live = results.find(r => r.ticker === stock.ticker);
-        if (!live) return stock;
+        if (!live || isNaN(live.price) || live.price === 0) return stock;
         return {
           ...stock,
           lastPrice: Math.round(live.price * 100) / 100,
-          changeQuarter: Math.round(live.change * 10) / 10
+          changeQuarter: isNaN(live.change) ? stock.changeQuarter : Math.round(live.change * 10) / 10
         };
       }));
 
@@ -415,7 +416,7 @@ export default function DynamicSettings({
         if (!prev || !prev.holdings) return prev;
         const updated = prev.holdings.map(h => {
           const live = results.find(r => r.ticker === h.ticker);
-          if (!live) return h;
+          if (!live || isNaN(live.price) || live.price === 0) return h;
           return {
             ...h,
             currentPrice: Math.round(live.price * 100) / 100
