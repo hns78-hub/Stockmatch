@@ -88,19 +88,17 @@ export default function StockCard({ stock, isTop, cardConfig = {} }) {
             <div style={styles.section}>
               <span style={styles.sectionTitle}>HISTORICAL PERFORMANCE</span>
               <div style={styles.perfGrid}>
+                <div style={styles.perfItem}>
+                  <span style={styles.perfLabel}>Last Month</span>
+                  <span style={{ ...styles.perfValue, color: getPercentColor(stock.changeMonth) }}>
+                    {formatPercent(stock.changeMonth)}
+                  </span>
+                </div>
                 {cardConfig.showChangeQ !== false && (
                   <div style={styles.perfItem}>
                     <span style={styles.perfLabel}>Last Quarter</span>
                     <span style={{ ...styles.perfValue, color: getPercentColor(stock.changeQuarter) }}>
                       {formatPercent(stock.changeQuarter)}
-                    </span>
-                  </div>
-                )}
-                {cardConfig.showChangeY !== false && (
-                  <div style={styles.perfItem}>
-                    <span style={styles.perfLabel}>Last Year</span>
-                    <span style={{ ...styles.perfValue, color: getPercentColor(stock.changeYear) }}>
-                      {formatPercent(stock.changeYear)}
                     </span>
                   </div>
                 )}

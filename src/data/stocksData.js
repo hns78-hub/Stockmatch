@@ -122,6 +122,7 @@ export const stocksData = baseConstituents.map((item, idx) => {
   
   // 1. Generate pricing metrics
   const basePrice = Math.round(30 + rand() * 800);
+  const changeM = Math.round((-8 + rand() * 16) * 10) / 10;
   const changeQ = Math.round((-15 + rand() * 40) * 10) / 10;
   const changeY = Math.round((-20 + rand() * 100) * 10) / 10;
   const change5Y = Math.round((20 + rand() * 800) * 10) / 10;
@@ -229,6 +230,7 @@ export const stocksData = baseConstituents.map((item, idx) => {
     trivia,
     // Expansion Metrics
     lastPrice: basePrice,
+    changeMonth: changeM,
     changeQuarter: changeQ,
     changeYear: changeY,
     change5Years: change5Y,
