@@ -41,7 +41,7 @@ export default function LandingSplash({ onStart, onAutoSelect, totalCount }) {
         </p>
 
         <p style={styles.description}>
-          We translate boring, complex 10-Q corporate financial reports into simple, jargon-free "dating profiles." Swipe right if you vibe, left if you pass.
+          We translate boring, complex 10-Q corporate financial reports into simple, jargon-free "dating profiles." Swipe right if you vibe, left if you pass. By investing directly in your handpicked stock matches, you bypass expensive mutual fund and ETF portfolio management fees, keeping 100% of your hard-earned gains.
         </p>
 
         <div style={styles.bulletsContainer}>
